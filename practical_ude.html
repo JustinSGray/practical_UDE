@@ -1,0 +1,444 @@
+<!doctype html>
+<meta charset="utf-8">
+<script src="https://distill.pub/template.v1.js"></script>
+
+<script>
+MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']]
+  }
+};
+</script>
+<script id="MathJax-script" async
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js">
+</script>
+
+<script type="text/front-matter">
+  title: "How to differentiate mixed implicit/explicit composite functions"
+  description: "A practical guide to a generalized and efficient process for differentiating mixed implicit/explicit composite functions"
+  authors:
+  - Justin S. Gray: http://github.com/justnsgray
+  affiliations:
+  - NASA Glenn Research Center: http://NASA.gov
+</script>
+
+<dt-article>
+  <h1>How to differentiate mixed implicit/explict composite functions</h1>
+  <h2>A genearlized approach to differentiation that is flexible, scalable, and efficient for mixed type composite functions</h2>
+  <dt-byline>Justin S. Gray</dt-byline>
+  <!-- <p>This is the first paragraph of the article.</p>
+  <p>We can also cite <dt-cite key="gregor2015draw"></dt-cite> external publications.</p> -->
+
+
+  <h2> Introduction </h2>
+  <p>
+  A composite function is an any function that is made up of a series of sub-functions. 
+  They can be as simple as $f = f(g(x))$, or as complex as a complete machine learning classifier or partial differential equation solver (PDE).
+  In many cases composite functions are composed of purely explicit sub-functions, but this is not always the case. 
+  Composite functions can be composed of a mix of implicit and explicit functions, and such mixed composite functions are more common than you might realize. 
+  All PDE solvers and implicit neural networks both employ mixed implicit/explicit composite functions. 
+  </p>
+  <p>
+  Differentiating large composite functions --- those made up of many nested sub-functions --- is difficult and tedious to to by hand. 
+  Algorithmic differentiation (AD) automates the tediuous task computing derivatives and has become ubiquitous in any application where derivatives are needed. 
+  AD provides more than mere convinence though, it opens up the door to rapid and large scale changes in the structure of any composite function. 
+  This lets a developer restructure a machine learning classifier on the fly or add new physics to their analysis tools raidly. 
+  Fundamentally, AD provides valuable flexibility to developers which improves productivity and encourages more experimentation. 
+  As powerful as AD is, there are some limitations that come into play when implicit functions enter the mix. 
+  To extend the power and flexibility of AD to a mixed implicit/explicit composite functions we can apply a more generalized approach called the unified derivative equations (UDE).
+  </p>
+
+  <h2> A (very) quick review of differentiation </h2>
+  <p>
+  We all start by learning to differentiate simple explicit functions of a single variable: <br>
+  $\dfrac{d }{dx}sin(x) = cos(x)$ <br>
+  $\dfrac{d }{dx}cos(x) = -sin(x)$ <br>
+  $\dfrac{d }{dx}ln(x) = \dfrac{1}{x}$
+  </p>
+  <p>
+  These foundational derivatives get combined via chain rule to compute derivatives of single-variable explicit composite functions. 
+
+  To differentiate explicit multi-variable composite functions we need to consider both total and partial derivatives to account for mutli-variable interactions.<br>
+  $f = \mathcal{F}_f(x)$<br>
+  $g = \mathcal{F}_g(x, f)$<br>
+  $\dfrac{d g}{dx} = \dfrac{\partial g}{\partial x} + \dfrac{\partial g}{\partial f}\dfrac{d f}{d x}$<br>
+  </p>
+  <p>
+  Though there are many calculations that are purely explicit, 
+  implicit functions also arise quite often. 
+  Partial differential equation solvers (PDE) and implicit neural networks are examples of whole programs that are fundamentally implicit.  
+  However, implicit calculations can hide in the middle of otherwise explicit calculations as well. 
+  One way to get an implicit relationship is via a set of explicit sub-functions have a cyclic data dependency. 
+  This is the case for implicit neural networks, where nodes in the network are intentionally connected in a feedback manner and set up to converge to a fixed-point. <br>
+
+  [example diagram of implicit neural network] 
+
+  simple while-loop based fixed-point iteration. 
+  A simple example is the Babylonian method for computing square roots<dt-cite key="fowler_1998"></dt-cite>, which can  give a surprisingly accurate approximation for the square root of a number in just a few iterations. 
+  <dt-code block language="python">
+  def babylonian_sqrt(a): 
+      x_n = a
+      resid = x_n*x_n - a
+      iter_count = 0
+      while resid > 1e-3 and iter_count < 15: 
+        x_n1 = 0.5*(a/x_n+x_n)
+        resid = x_n*x_n - a
+        x_n = x_n1
+        iter_count += 1 
+      return x_n, iter_count
+  </dt-code>
+  This is an implicit function, defined by the residual <br>
+  $r = x_n*x_n - a = 0$<br>
+  that is converged by the while-loop to a tolerance of $0.001$.
+  </p>
+    
+  <p>
+  We can describe a coupled system of implicit equations via the vector residual equation <br>
+  $r = \mathcal{R}(x,y) = 0$ <br>
+  $x$ are the input variables and $y$ are the implicit output variables (a.k.a state variables, degress-of-freedom) that get varied to satisfy the residual equation. 
+  Assuming that $\mathcal{R}(x,y)$ is smooth and continuous, $\dfrac{dy}{dx}$ will exist.  
+  This derivative represents the change in  the converged value of $y$ with respect to changes in $x$. 
+  The challenge then is how to compute it.
+  We know that by definition, at any converged point the residual must be $0$, 
+  so the total derivative of $r$ must also be $0$. <br>
+  $\dfrac{d r}{dx} =\dfrac{\partial  r}{\partial x} + \dfrac{\partial  r}{\partial y} \dfrac{d  y}{d x} = 0$ <br>
+  This can be rearranged to let us solve for $\dfrac{dy}{dx}$ <br>
+  $  \dfrac{d  y}{d x} = - \left[ \dfrac{\partial  r}{\partial y} \right]^{-1} \dfrac{\partial  r}{\partial x}$
+  </p>
+  <p>
+  $\left[ \dfrac{\partial  r}{\partial y} \right]$ is a matrix because $r$ is a vector of residuals for our coupled system of equations. 
+  </p>
+  <p>
+  In order to solve for the total derivatives of an implicit system of equations we need to solve a linear system of equations. 
+  Here we've solved the linear system by inverting the partial derivative matrix, but in general any of the many ways to solve a linear system could be used. 
+  The key point to understand is that computing total derivatives of implicit functions requires solving a linear system. 
+  </p>
+
+  <p>
+  Now we have the tools to differentiate a mixed composite implicit/explicit function: <br>
+  $r_f = \mathcal{R}_f(x,f)$<br>
+  $g = \mathcal{F}_g(x, f)$<br><br>
+  $\dfrac{d g}{dx} = \dfrac{\partial g}{\partial x} + \dfrac{\partial g}{\partial f}\dfrac{d f}{d x}$<br>
+  $  \dfrac{d  f}{d x} = - \left[ \dfrac{\partial  r_f}{\partial f} \right]^{-1} \dfrac{\partial  r_f}{\partial x}$
+  </p>
+
+  <h2> Limitations of pure AD </h2>
+
+  <p>
+  The need to solve a linear system of equations is what makes mixed implicit/explicit composite functions more challenging to differentiate.
+  Pure AD approaches don't understand implicit functions and will use some brute force methods, like unrolling the while-loop in order to differentiate the code. 
+  In the best case, the unrolling approach works but is inefficient --- in particular it uses a lot of extra memory.
+  However, Greiwank et al. showed that unrolling does not always give accurate derivatives<dt-cite key="Griewank:1993"></dt-cite> depending on how fast the solver you are using can converge the implicit function.
+  </p>
+  
+  <p>
+  Lets construct a simple composite function using the Babylonian square root algorithm example from above. 
+  <dt-code block language="python">
+    def composite_f1(a):
+      sqrt_a = a**0.5
+      return 2*sqrt_a + 1/sqrt_a
+
+    def composite_f2(a):
+      sqrt_a, iter_count = babylonian_sqrt(a)
+      return 2*sqrt_a + 1/sqrt_a
+  </dt-code>
+
+  Both <dt-code language=python> composite_f1 </dt-code> and <dt-code language=python> composite_f2 </dt-code> compute produce the same result to within the given solver tolerance.
+  However, we can see that the first function is very easy to differentiate, while the second one is harder because we have to deal with the implicit function <dt-code language=python>babylonian_sqrt</dt-code>. 
+  </p>
+
+  <p>A pure AD approach would result in code like this
+    <dt-code block language="python">
+      def d_composite_f1(a): 
+          sqrt_a = a**0.5
+          d_sqrt_a = 0.5*a**-0.5
+          return (2 - 1/sqrt_a**2)*d_sqrt_a
+
+
+      def d_composite_f2(a): 
+          sqrt_a, iter_count = babylonian_sqrt(a)
+          d_sqrt_a, d_iter_count = d_babylonian_sqrt(a)
+          return (2 - 1/sqrt_a**2)*d_sqrt_a
+
+      def d_babylonian_sqrt(a):
+          x_n = a
+          resid = x_n*x_n - a
+          iter_count = 0
+          while resid > 1e-3 and iter_count < 15: 
+            x_n1 = 0.5*(a/x_n+x_n)
+            d_x_n1 = 0.5*(1/x_n)
+            
+            resid = x_n*x_n - a
+            x_n = x_n1
+            iter_count += 1 
+          return x_n1, d_x_n1, iter_count
+    </dt-code>
+
+    Both methods give nearly same answer, but not exactly the same!
+    <dt-code block language="python">
+      >>> d_composite_f1(600.32)
+      0.04077995328556882
+      >>> d_composite_f2(600.32)
+      0.04077995321779011
+    </dt-code>
+    The explicit formulation is more accurate, because it does not incur the convergence error from the somewhat loose solver tolerance.  
+    If you forced the solver to converge more tightly, you could get better results from <dt-code language=python>d_composite_f2</dt-code>, but that would be computationally expensive because you need to use more iterations. <br> 
+    <br> 
+    [plot of derivative error vs tolerance value]
+    </p>
+    <p>
+    We can do better by using the implicit differentiation technique, without needing tighter solver tolerance at all.
+    First we compute partial derivatives of the residual equation ($r = x_n*x_n - a$) with respect to the implicit output ($x_n$) and the input variable ($a$). 
+    Then we combine them using the implicit derivative equation to solve for the total derivative. 
+    <dt-code block language="python">
+      def d_composite_f2_implicit(a): 
+          sqrt_a, d_sqrt_a = d_babylonian_sqrt_implicit(a)
+          return (2 - 1/sqrt_a**2)*d_sqrt_a
+
+
+      def d_babylonian_sqrt_implicit(a): 
+          x_n1, iter_count = babylonian_sqrt(a)
+
+          resid = x_n1*x_n1 - a
+          dresid__da = - 1
+          dresid__dx_n = 2*x_n1 
+
+          # since this is a scalar equation, we can just divide instead of taking an inverse
+          return x_n1, -dresid__da/dresid__dx_n
+    </dt-code>  
+    <dt-code block language="python">
+      >>> d_composite_f1(600.32)
+      0.04077995328556882
+      >>> d_composite_f2_implicit(600.32)
+      0.04077995328556882
+    </dt-code>
+    Even though we only converged the implicit function to a tolerance of $0.001$, the implicit differentiation technique still returns a very accurate derivative. 
+    Better accuracy is nice, but it comes at the cost of increased manual labor. 
+    We needed to manually differentiate the residual function and then assemble the total derivative equation. 
+  </p>
+
+  <p>
+  AD algorithms were created specifically to reduce errors and lower the amount of work needed to compute derivatives. 
+  They are highly effective for purely explicit composite functions. 
+  They can potentially work for some simple implicit calculations, but suffer from poor accuracy and increased compute cost in these situations. 
+  So for mixed implicit/explicit composite functions a pure AD approach forces us to trade lower developer effort for worse accuracy and lower computational efficiency. 
+  </p>
+
+  <p>
+  There is an alternative approach that offers the best of both worlds though. 
+  The unified derivative equation[CITE], developed by Hwang and Martins,  combines the algorithmic automation of an AD approach with the computational accuracy of the implicit differentiation formula. 
+  Hwang and Martins developed the UDE to automate the difficult and tedious process of assembling total derivative calculations for complex engineering models, including models that ran in a distributed computation environment like PDE solvers for aerodynamic and structural analyses. 
+  Their method is generally applicable to any mixed implicit/explicit composite function. 
+  </p>
+
+
+  <h2> The unified derivative equations </h2>
+  <p>
+  The UDE is easy to implement but the derivation for it requires a bit of math to work out. 
+  It is a bit like the quadratic formula --- you can easily remember the formula even if you don't remember where it came from. 
+  We'll first start by presenting the recipe for how to apply the UDE and demonstrate that it does work. 
+  Then, later we'll work through the math of where it comes from. 
+  </p>
+  <h3> The UDE Procedure </h3>
+  <p>
+  <ul>
+  <li> Arange all the variables, including all the input variables, into a single vector: $U$. </li>
+  <li> Arrange all the sub-functions, including place-holders for the inputs, into a vector valued function: $\mathcal{R}(U)$</li>
+  <li>Allocate a square matrix Jacobian: J = $\left[ \dfrac{\partial \mathcal{R}}{\partial U} \right]$. </li>
+  <li>For each row in $J$, place the partial derivatives of the associated function into the correct columns  </li>
+    <ul>
+    <li>for input variables, put an Identity matrix on the diagonal and leave the rest blank </li>
+    <li>for rows with an explicit function, put the negative of partial derivatives of the function with respect to that column's variable</li>
+    <li>for implicit rows, put the partial derivatives of the residual equation with respect to that column's variable</li>
+    </ul>
+  <li> Compute total derivatives by taking the inverse of the partial derivative matrix: $\left[ \dfrac{d \mathcal{R}}{d U} \right] = \left[ \dfrac{\partial \mathcal{R}}{\partial U} \right]^{-1}$ </li>
+  <li> Extract the total derivatives you need from the corresponding row/column of the total derivative matrix </li> 
+  </ul>
+  </p>
+
+  <p>
+  Lets revisit our simple example problem, the composite function built on the Babylonian square root. 
+  We'll modestly restructure the code to specifically aknowledge the implicit nature of the Babylonian algorithm. 
+  <dt-code block language="python">
+    # primary implicit function definition
+    def resid_babylonian_sqrt(a, sqrt_a): 
+          resid = x_n*x_n - a
+          return 
+
+    # separate method for converging the implicit function
+    def solve_babylonian_sqrt(a): 
+        sqrt_a_guess = a
+        resid = resid_babylonian_sqrt(a, sqrt_a_guess)
+        iter_count = 0
+        while resid > 1e-3 and iter_count < 15: 
+          iter_count += 1 
+          next_guess = 0.5*(a/sqrt_a_guess+sqrt_a_guess)
+          resid = resid_babylonian_sqrt(a, next_guess)
+          sqrt_a_guess = next_guess
+        return x_n, iter_count
+
+    def composite_f3(a):
+      sqrt_a, iter_count = solve_babylonian_sqrt(a)
+      f3 = 2*sqrt_a + 1/sqrt_a
+      return f3
+  </dt-code>
+  </p>
+  <p>
+  Now we follow the recipe: 
+  <ul>
+  <li> $U$ = {<dt-code>a</dt-code>, <dt-code>sqrt_a</dt-code>, <dt-code>f3</dt-code>}$. </li>
+  <li> $\mathcal{R}(U)$ = {<dt-code>f_a</dt-code>, <dt-code>resid_babylonian_sqrt</dt-code>, <dt-code>composite_f3</dt-code>}</li>
+  <li>J = $\left[ \dfrac{\partial \mathcal{R}}{\partial U} \right]$. [add picture of 3x3 grid with labeled rows/cols] </li>
+  <li> Fill in the rows of the matrix with equations and show values </li>
+  <li> show inverse of matrix </li>
+  </ul>
+  </p> 
+  <h3> Derivation of the UDE </h3>
+
+  <p>
+  You may have noticed the similarity between the final step of the UDE formula where we invert a matrix,
+  and the original technique shown for taking derivatives of an implicit function. 
+  This is no coincidence. 
+  The derivation of the UDE involves a series of three transformations that convert everything into a single coupled implicit function which we then differentiate. 
+  </p>
+  <p>
+  We start with a general composite function, composed of a mixture of implicit and explicit sub-functions. <br>
+  $f = F_f(x,h)$ <br>
+  $\mathcal{R}_g(x,f,y_g)$ <br> 
+  $h = F_h(x, y_g)$ <br>
+  There is one input variables, $x$, and three output variables: $f, y_g, h$. 
+  </p>
+  <h4> The first transformation </h4>
+  <p>
+  Convert all explicit functions into an equivalent implicit form <br>
+  $\mathcal{R}_f(x, f, h) = f - F_f(x,h) = 0$<br>
+  $\mathcal{R}_h(x, h, y_g) = h - F_h(x,y_g) = 0$<br>
+
+  The new implicit functions are trivially simple to solve. 
+  The purpose is not to convert the explicit equations for the purposes of the actual implementation,
+  but just as a tool to complete the derivation. 
+  </p>
+  <h4> The second transformation </h4>
+  <p>
+  Add a new auxiliary variable, $\overline{x}$, to convert the input variables into an implicit form. <br>
+  $\mathcal{R}_x(x, \overline{x}) = \overline{x} - x = 0$ <br>
+
+  Similar to the first transformation, this results in a trivially simple implicit expression. 
+  Again, the purpose is not to actually convert your code to use this format but just to use the transformation to prove the validity of the UDE. 
+  Practical use of the UDE does not require the actual creation of the new auxiliary variables. 
+  </p>
+  <h4> The third transformation </h4>
+  <p>
+  Add one more new auxiliary variable as an offset to all the implicit versions of the functions from the original problem (i.e. both the transformed explicit functions and the original implicit functions). <br>
+  $\overline{\mathcal{R}}_f(x,f,y_g, \overline{r}_f) = \mathcal{R}_g(x,f,y_g) - \overline{r}_f = 0$ <br>
+  $\overline{\mathcal{R}}_g(x,f,y_g, \overline{r}_g) = \mathcal{R}_g(x,f,y_g) - \overline{r}_g = 0$ <br>
+  $\overline{\mathcal{R}}_h(x,h,y_g, \overline{r}_h) = \mathcal{R}_g(x,f,y_g) - \overline{r}_h = 0$ <br>
+  This transformation is different than the first two, because it has the potential to actually change the problem being solved. 
+  If any $\overline{r}$ variable takes any non-zero value it would cause the solution to change. 
+  To work around this stipulate that for any valid solution we will choose $\overline{r}=0$ for all these auxiliary variables. 
+  </p>
+  <p>
+  Again, in practice we do not need to actually create $\overline{r}$, but it is necessary to derive the UDE. 
+  </p>
+
+  <h4> Combining all the transformed functions together </h4> 
+  <p>
+  Aggregate all the auxiliary variables into one vector: 
+  $\phi = \left[ \overline{x}, \overline{r}_f, \overline{r}_g, \overline{r}_h \right]$
+  </p>
+
+  <p>
+  Aggregate all the implicit variables into one vector: 
+  $U = \left[x, f, y_g, h \right]$
+  </p>
+
+  <p>
+  Aggregate all the transformed residuals into one vector valued function: 
+  $\mathcal{R} = \left[\mathcal{R_x},  \overline{\mathcal{R_f}}, \overline{\mathcal{R_g}},  \overline{\mathcal{R_h}} \right]$
+  </p>
+
+  <p>
+  The result is one monolithic implicit function, which when solved will yield the exact same answer as the original mixed implicit/explicit composite function. <br>
+  $\mathcal{R}(\phi, U) = 0$
+  </p>
+
+  <h4>Deriving the UDE from the combined implicit function</h4>
+  <p>
+  We know that at a converged point $\mathcal{R}(\phi, U) = 0$, 
+  so it follows that <br>
+  $\left[ \dfrac{d\mathcal{R}}{d \phi} \right] = \left[\dfrac{\partial \mathcal{R}}{\partial \phi}\right] + \left[\dfrac{\partial \mathcal{R}}{\partial U}\right] \left[\dfrac{d \mathcal{R}}{d U} \right]= 0$ <br>
+  </p>
+  <p>
+  Now we note that, <br>
+  $\dfrac{\partial \mathcal{R}_x}{\partial \phi} = [-I, 0, 0, 0]^T$ <br> 
+  $\dfrac{\partial \mathcal{R}_f}{\partial \phi} = [0, -I, 0, 0]^T$ <br> 
+  $\dfrac{\partial \mathcal{R}_g}{\partial \phi} = [0, 0, -I, 0]^T$ <br> 
+  $\dfrac{\partial \mathcal{R}_h}{\partial \phi} = [0, 0, 0, -I]^T$ <br> 
+  </p>
+  <p>
+  So overall <br>
+  $\dfrac{\partial \mathcal{R}}{\partial \phi} = - \left[ I \right] $ <br> 
+  and we can substitute that into the total derivative equation for $\mathcal{R}$ which gives the UDE:<br> 
+  $\left[\dfrac{\partial \mathcal{R}}{\partial U}\right] \left[\dfrac{d \mathcal{R}}{d U} \right]= \left[ I \right]$ <br>
+  </p>
+  <p>
+  In practice, you likely will not solve for the complete $\left[\dfrac{d \mathcal{R}}{d U} \right]$ matrix. 
+  Every single variable in your computation is included in that matrix, and you likely only directly cared about a specific set of inputs and outputs. 
+  You would only need the specific rows and columns of the matrix that corresponded to those variables. 
+  </p>
+  <p>
+  In the given form above, each column of the identity matrix corresponds to a single column of $\left[\dfrac{d \mathcal{R}}{d U} \right]$. 
+  So you could perform one linear solve for each column of interest to compute the total derivatives needed. 
+  </p>
+  <p>
+  In many common cases, there are far more columns of insterest --- corresponding to input variables --- than there are outputs of interest --- corresponding to objectives and constraints. 
+  For example, in most machine learning training processes you have only a single objective function and no constraints. 
+  In these cases, solving for the total derivatives one column at a time is wasteful. 
+  It is far more efficient to solve for them one row at a time, because you only need the one row. 
+  This is accomplished by taking the transpose of the UDE equation. <br>
+  $\left[\dfrac{\partial \mathcal{R}}{\partial U}\right]^T \left[\dfrac{d \mathcal{R}}{d U} \right]^T = \left[ I \right]$<br>
+  Now each solve corresponds to a single column of $\left[\dfrac{d \mathcal{R}}{d U} \right]^T$, 
+  or a single row of $\left[\dfrac{d \mathcal{R}}{d U} \right]$. 
+  So for an unconstrained optimization problem you need only solve this linear system one time to get all the derivatives needed. 
+  </p>
+  <p>
+  The two forms of the UDE are typically show together: <br> 
+  $\left[\dfrac{\partial \mathcal{R}}{\partial U}\right] \left[\dfrac{d \mathcal{R}}{d U} \right] = \left[ I \right]
+  = \left[\dfrac{d \mathcal{R}}{d U} \right]^T \left[\dfrac{\partial \mathcal{R}}{\partial U}\right]^T$
+  </p>
+
+
+  <h2> Application to Implicit Neural Network </h2>
+
+  <h2> Application to Engineering Problems </h2>
+</dt-article>
+
+<dt-appendix>
+</dt-appendix>
+
+<script type="text/bibliography">
+
+
+  @article{Griewank:1993,
+    author = {Andreas Griewank and Christian Bischof and George Corliss and Alan Carle and Karen Williamson},
+    journal = {Optimization Methods and Software},
+    pages = {321--355},
+    title = {Derivative Convergence for Iterative Equation Solvers},
+    volume = {2},
+    year = {1993}, 
+    doi={10.1080/10556789308805549},
+    url={https://doi.org/10.1080/10556789308805549}
+  }
+
+  @article{fowler_1998, 
+    author={David Fowler and Eleanor Robson}, 
+    journal={Historia Mathematica}, 
+    pages={366-378}, 
+    title={Square Root Approximations in Old Babylonian Mathematics: YBC 7289 in Context}, 
+    volume={25}, 
+    issue={4}, 
+    year={1998}, 
+    doi={10.1006/hmat.1998.2209}, 
+    url={https://doi.org/10.1006/hmat.1998.2209} 
+  }
+</script>
